@@ -21,6 +21,19 @@ category, and always know how much you have left.
   </tr>
 </table>
 
+## Download
+
+**[⬇ Download kharcha.apk](https://github.com/Amirsohail007/kharcha/releases/latest/download/kharcha.apk)** (about 3.5 MB, Android 8.0 or newer).
+All versions are on the [Releases page](https://github.com/Amirsohail007/kharcha/releases).
+
+1. Open the downloaded file on your phone.
+2. If asked, allow your browser or Files app to install unknown apps.
+3. Google Play Protect may warn that it doesn't recognise the app, because it isn't from the Play Store. Choose **Install anyway**.
+
+Every release is signed with the same key, so newer versions install over older ones and keep your data.
+The signing certificate's SHA-256 is
+`05:23:94:25:07:C5:A8:F4:6D:36:B7:0A:D7:BD:7F:3D:5C:9C:B0:FD:EF:B5:65:28:D7:9A:94:8B:5D:9D:5C:84`.
+
 ## Why
 
 UPI makes paying effortless, which also makes it easy to lose track. PhonePe's history lists every
@@ -57,7 +70,7 @@ PhonePe has no API for personal transaction history, so the app reads the statem
 > If yours doesn't, see [Checking the parser](#checking-the-parser-against-your-statement) and open an issue.
 > Redact names, phone numbers, UPI IDs and transaction IDs before sharing any statement text.
 
-## Build and install
+## Build from source
 
 Requirements: Android Studio (recent) or JDK 17+ with the Android SDK, compileSdk 37. The app runs on Android 8.0 (API 26) and up.
 
@@ -72,6 +85,9 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Or copy `app/build/outputs/apk/debug/app-debug.apk` to the phone and open it (allow "install unknown apps").
+
+`./gradlew assembleRelease` builds the smaller, shrunk APK. It is signed only when a `keystore.properties`
+file points at a signing key; without one you get an unsigned APK.
 
 Run the unit tests:
 
