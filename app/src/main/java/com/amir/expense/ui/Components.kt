@@ -75,6 +75,9 @@ fun categoryLabel(id: Long?, categories: List<Category>): String? {
     return "${parent.name} › ${c.name}"
 }
 
+/** plural(1, "payment") -> "1 payment", plural(3, "payment") -> "3 payments". */
+fun plural(n: Int, noun: String): String = "$n $noun" + if (n == 1) "" else "s"
+
 fun paiseToInput(paise: Long?): String =
     if (paise == null || paise == 0L) "" else java.math.BigDecimal.valueOf(paise, 2).stripTrailingZeros().toPlainString()
 

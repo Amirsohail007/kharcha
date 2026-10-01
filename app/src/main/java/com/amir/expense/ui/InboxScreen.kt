@@ -61,7 +61,7 @@ fun InboxScreen(vm: MainViewModel) {
             ScreenHeader("Inbox")
             Text(
                 if (inbox.isEmpty()) "Imported payments land here until you file them."
-                else "${inbox.size} payments need a category. Tap a category, or More for the full list.",
+                else "${plural(inbox.size, "payment")} to sort. Tap a category to file one, or More to auto-file that merchant too.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -79,7 +79,7 @@ fun InboxScreen(vm: MainViewModel) {
         } else {
             item { ImportButton(vm, label = "Import another statement", tonal = true) }
             items(inbox, key = { it.id }) { txn ->
-                InboxCard(txn, quick, categories, onQuick = { vm.categorize(txn, it, remember = true) }, onMore = { picking = txn })
+                InboxCard(txn, quick, categories, onQuick = { vm.categorize(txn, it, remember = false) }, onMore = { picking = txn })
             }
         }
     }

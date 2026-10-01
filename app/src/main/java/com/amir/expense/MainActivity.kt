@@ -33,6 +33,11 @@ class MainActivity : ComponentActivity() {
         setContent { AppTheme { AppRoot(vm) } }
     }
 
+    override fun onResume() {
+        super.onResume()
+        vm.refreshMonth()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleShare(intent)

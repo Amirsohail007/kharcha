@@ -169,7 +169,7 @@ private fun ImportDialogs(vm: MainViewModel, onDone: () -> Unit) {
             val r = s.result
             AlertDialog(
                 onDismissRequest = vm::dismissImport,
-                title = { Text(if (r.added > 0) "${r.added} payments imported" else "Nothing new") },
+                title = { Text(if (r.added > 0) "${plural(r.added, "payment")} imported" else "Nothing new") },
                 text = {
                     Text(
                         listOfNotNull(

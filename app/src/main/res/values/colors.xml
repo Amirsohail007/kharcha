@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="launcher_bg">#3B3BCF</color>
+    <!-- Window and accent behind Compose; match Theme.kt so launch and system dialogs don't clash. -->
+    <color name="window_light">#F4F5FA</color>
+    <color name="window_dark">#0E0F1A</color>
+    <color name="accent_light">#3B3BCF</color>
+    <color name="accent_dark">#A3A3FF</color>
 </resources>

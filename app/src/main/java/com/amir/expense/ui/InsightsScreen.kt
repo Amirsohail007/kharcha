@@ -137,7 +137,11 @@ private fun DailyBars(txns: List<Txn>, month: YearMonth) {
     val zone = ZoneId.systemDefault()
     val days = month.lengthOfMonth()
     val perDay = LongArray(days)
-    txns.filterNot { it.ignored }.forEach { perDay[Instant.ofEpochMilli(it.timestamp).atZone(zone).dayOfMonth - 1] += it.amountPaise }
+    txns.filterNot { it.ignored }.forEach {
+        val day = Instant.ofEpochMilli(it.timestamp).atZone(zone).toLocalDate()
+        // The month flips a moment before its transactions load; last month's 31st must not index a 30-day array.
+        if (YearMonth.from(day) == month) perDay[day.dayOfMonth - 1] += it.amountPaise
+    }
     val max = perDay.max().coerceAtLeast(1)
     val today = LocalDate.now()
     val todayIndex = if (YearMonth.from(today) == month) today.dayOfMonth - 1 else -1
@@ -189,7 +193,9 @@ private fun DailyBars(txns: List<Txn>, month: YearMonth) {
     Spacer(Modifier.height(12.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         StatPill("Highest day", formatRupees(perDay.max()), Modifier.weight(1f))
-        StatPill("Daily average", formatRupees(perDay.sum() / days / 100 * 100), Modifier.weight(1f))
+        // This month: average over the days so far, not the whole month.
+        val elapsed = if (todayIndex >= 0) todayIndex + 1 else days
+        StatPill("Daily average", formatRupees(perDay.sum() / elapsed / 100 * 100), Modifier.weight(1f))
     }
 }
 

@@ -46,11 +46,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.amir.expense.data.AppDatabase
 import com.amir.expense.data.Category
 
 /**
  * Category identity colors: the 8 validated categorical slots, each pinned to one seeded
- * top-level category by name so a color never moves when categories are added or removed.
+ * top-level category (by id, see [SEED_NAME]) so a color never moves when categories are added,
+ * removed or renamed.
  * Categories you create yourself get neutral gray plus their own initial.
  */
 private enum class Hue(val light: Long, val dark: Long) {
@@ -80,6 +82,14 @@ private val ICONS: Map<String, ImageVector> = mapOf(
     "gifts" to Icons.Rounded.CardGiftcard, "other" to Icons.Rounded.Category,
 )
 
+/** Seeded category id -> its original name, so a renamed "Food" keeps Food's color and icon. */
+private val SEED_NAME: Map<Long, String> =
+    AppDatabase.SEED.flatMap { (parent, kids) -> listOf(parent) + kids }
+        .mapIndexed { i, name -> (i + 1L) to name.lowercase() }.toMap()
+
+/** Seeded categories by original name; ones you create by their own name. */
+private fun Category.styleName(): String = SEED_NAME[id] ?: name.lowercase()
+
 /** How a category is drawn: [icon] (null = show [initial]) on a [container] tint, in [color]. */
 data class CategoryLook(val icon: ImageVector?, val initial: String, val color: Color, val container: Color)
 
@@ -88,9 +98,9 @@ fun lookOf(categoryId: Long?, categories: List<Category>): CategoryLook {
     val c = categories.firstOrNull { it.id == categoryId }
     val parent = c?.parentId?.let { pid -> categories.firstOrNull { it.id == pid } } ?: c
     val dark = isSystemInDarkTheme()
-    val hue = PARENT_HUE[parent?.name?.lowercase()]
+    val hue = parent?.let { PARENT_HUE[it.styleName()] }
     val color = hue?.let { Color(if (dark) it.dark else it.light) } ?: MaterialTheme.colorScheme.onSurfaceVariant
-    val icon = c?.let { ICONS[it.name.lowercase()] ?: ICONS[parent?.name?.lowercase()] }
+    val icon = c?.let { ICONS[it.styleName()] ?: parent?.let { p -> ICONS[p.styleName()] } }
         ?: if (c == null) Icons.Rounded.Sell else null
     val container = color.copy(alpha = if (dark) 0.24f else 0.13f).compositeOver(MaterialTheme.colorScheme.surfaceContainerLowest)
     return CategoryLook(icon, c?.name?.take(1)?.uppercase() ?: "?", color, container)

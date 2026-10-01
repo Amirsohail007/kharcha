@@ -25,6 +25,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -124,10 +125,10 @@ private fun HeroCard(spent: Long, budget: Long?, month: YearMonth, onEdit: () ->
                     style = MaterialTheme.typography.labelLarge, color = soft, modifier = Modifier.weight(1f),
                 )
                 if (budget != null) {
-                    Icon(
-                        Icons.Rounded.Edit, contentDescription = "Edit monthly budget", tint = soft,
-                        modifier = Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onEdit).padding(7.dp),
-                    )
+                    // IconButton keeps the 48dp touch target while the pencil stays small.
+                    IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Rounded.Edit, contentDescription = "Edit monthly budget", tint = soft, modifier = Modifier.size(18.dp))
+                    }
                 }
             }
             Text(
@@ -167,7 +168,7 @@ private fun SortBanner(count: Int, onClick: () -> Unit) {
             Icon(Icons.Rounded.MoveToInbox, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("$count payments to sort", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                Text("${plural(count, "payment")} to sort", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
                 Text("Pick a category so budgets stay accurate", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f))
             }
             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer)

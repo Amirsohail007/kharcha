@@ -72,6 +72,7 @@ import java.time.LocalDateTime
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.abs
 
 @Composable
 fun TransactionsScreen(vm: MainViewModel) {
@@ -115,7 +116,7 @@ fun TransactionsScreen(vm: MainViewModel) {
                             Text("Spent", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f))
                             Text(formatRupees(BudgetMath.totalSpend(shown)), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
                         }
-                        Text("${shown.size} payments", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text(plural(shown.size, "payment"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     }
                 }
             }
@@ -198,7 +199,9 @@ private fun blankTxn(month: YearMonth): Txn {
 private fun TxnEditor(vm: MainViewModel, txn: Txn, categories: List<Category>, onClose: () -> Unit) {
     val context = LocalContext.current
     val zone = ZoneId.systemDefault()
-    var amount by remember { mutableStateOf(paiseToInput(txn.amountPaise)) }
+    // The field edits the size of the amount; money received keeps its minus sign on save.
+    val credit = txn.amountPaise < 0
+    var amount by remember { mutableStateOf(paiseToInput(abs(txn.amountPaise))) }
     var merchant by remember { mutableStateOf(txn.merchant) }
     var note by remember { mutableStateOf(txn.note.orEmpty()) }
     var timestamp by remember { mutableLongStateOf(txn.timestamp) }
@@ -215,7 +218,7 @@ private fun TxnEditor(vm: MainViewModel, txn: Txn, categories: List<Category>, o
             Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).imePadding().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(if (txn.id == 0L) "Add expense" else "Edit payment", style = MaterialTheme.typography.titleLarge)
+            Text(when { txn.id == 0L -> "Add expense"; credit -> "Money received"; else -> "Edit payment" }, style = MaterialTheme.typography.titleLarge)
             // Big centered "₹250": the ₹ is drawn by a visual transformation so it stays glued to the digits.
             BasicTextField(
                 value = amount, onValueChange = { if (it.matches(AMOUNT_INPUT)) amount = it },
@@ -262,7 +265,7 @@ private fun TxnEditor(vm: MainViewModel, txn: Txn, categories: List<Category>, o
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Count as expense", style = MaterialTheme.typography.titleSmall)
+                    Text(if (credit) "Count as refund" else "Count as expense", style = MaterialTheme.typography.titleSmall)
                     Text(
                         if (txn.source == Txn.SOURCE_PHONEPE) "From PhonePe statement" else "Turn off for transfers or money lent",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -292,7 +295,7 @@ private fun TxnEditor(vm: MainViewModel, txn: Txn, categories: List<Category>, o
                         val name = merchant.trim()
                         vm.save(
                             txn.copy(
-                                amountPaise = paise!!, merchant = name, merchantKey = merchantKey(name),
+                                amountPaise = if (credit) -paise!! else paise!!, merchant = name, merchantKey = merchantKey(name),
                                 note = note.trim().ifEmpty { null }, timestamp = timestamp,
                                 categoryId = categoryId, ignored = !counted,
                             ),

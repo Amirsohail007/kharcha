@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.amir.expense.MainActivity
+import com.amir.expense.R
 import com.amir.expense.data.AlertFired
 import com.amir.expense.data.Budget
 import com.amir.expense.data.BudgetMath
@@ -55,9 +56,10 @@ class BudgetAlerts(private val context: Context, private val dao: ExpenseDao) {
         )
         val title = if (level >= 100) "$name budget exceeded" else "$name budget $level% used"
         val notification = NotificationCompat.Builder(context, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText("${formatRupees(spent)} of ${formatRupees(budget)} spent")
+            .setColor(0xFF3B3BCF.toInt()) // brand indigo for the icon in the shade
             .setContentIntent(open)
             .setAutoCancel(true)
             .build()

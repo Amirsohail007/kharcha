@@ -134,7 +134,8 @@ abstract class AppDatabase : RoomDatabase() {
                 })
                 .build()
 
-        private val SEED = linkedMapOf(
+        /** Inserted in this order into a fresh database, so these get ids 1, 2, 3… (Food = 1, Delivery = 2, …). */
+        internal val SEED = linkedMapOf(
             "Food" to listOf("Delivery", "Restaurant", "Groceries"),
             "Travel" to listOf("Office", "Explore", "Fuel"),
             "Bills" to listOf("Rent", "Utilities", "Mobile & Internet", "Subscriptions"),

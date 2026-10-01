@@ -54,6 +54,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun shiftMonth(by: Long) { month.value = month.value.plusMonths(by) }
 
+    private var thisMonth = YearMonth.now()
+
+    /**
+     * Called on resume: if the app sat open into a new month, follow it, unless you were browsing another month.
+     * ponytail: resume only; staying on screen across midnight on the 31st waits for the next resume.
+     */
+    fun refreshMonth() {
+        val now = YearMonth.now()
+        if (now == thisMonth) return
+        if (month.value == thisMonth) month.value = now
+        thisMonth = now
+    }
+
     // --- import ---
     fun startImport(uri: Uri) {
         importState.value = ImportState.AskPassword(uri, prefs.getString(KEY_PASSWORD, "").orEmpty(), null)
