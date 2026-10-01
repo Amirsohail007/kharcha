@@ -1,32 +1,88 @@
-# Expenses
+# Kharcha
 
-Personal Android app: set a monthly budget, import PhonePe statements, file each payment into a category, see what's left.
+**Kharcha** (खर्चा, Hindi for "expenses") is a private Android app for living on a monthly budget.
+Give yourself a fixed amount for the month, import your PhonePe statement, file each payment into a
+category, and always know how much you have left.
 
-PhonePe has no API for personal history, so the app reads the statement PDF
-(PhonePe → History → Download Statement; the password is your PhonePe mobile number).
-Share the PDF to **Expenses**, or use **Import PhonePe statement** in the app.
-Re-importing an overlapping statement only adds new payments.
+<table>
+  <tr>
+    <td><img src="docs/screenshots/home.png" width="180" alt="Home: money left this month, daily allowance and category budgets"></td>
+    <td><img src="docs/screenshots/inbox.png" width="180" alt="Inbox: imported payments waiting for a category"></td>
+    <td><img src="docs/screenshots/spends.png" width="180" alt="Spends: payments grouped by day"></td>
+    <td><img src="docs/screenshots/insights.png" width="180" alt="Insights: where the money went and day-by-day spending"></td>
+    <td><img src="docs/screenshots/home-dark.png" width="180" alt="Home in dark mode with a category over budget"></td>
+  </tr>
+  <tr>
+    <td align="center">Home</td>
+    <td align="center">Inbox</td>
+    <td align="center">Spends</td>
+    <td align="center">Insights</td>
+    <td align="center">Dark mode</td>
+  </tr>
+</table>
+
+## Why
+
+UPI makes paying effortless, which also makes it easy to lose track. PhonePe's history lists every
+payment but can't tell you "₹4,000 left for food this month". Kharcha answers that one question.
+
+## Features
+
+- **Monthly budget**: money left to spend, a progress bar, and how much you can spend per day for the rest of the month.
+- **PhonePe import**: share the statement PDF to the app or pick it from Files. Re-importing an overlapping statement only adds what's new.
+- **Inbox**: imported payments wait here until you pick a category. One tap files a payment; "Always file here" files that merchant automatically from then on.
+- **Two-level categories**: Food › Delivery, Food › Restaurant, Travel › Office, Travel › Explore and so on. Rename, add or delete any of them.
+- **Per-category budgets** with alerts at 80% and 100%.
+- **Insights**: where the money went, spending day by day, and this month against last month.
+- **Manual entries** for cash. Mark self-transfers or money lent as "not an expense"; file money received under a category to count it as a refund.
+- Light and dark theme.
+
+## Privacy
+
+- The app has **no internet permission**, so it cannot send your data anywhere.
+- Everything lives in a database on your phone. There is no account and no server.
+- The statement password is saved on the phone only, to fill it in on your next import.
+- If Android backup is on, the app's data is included in your phone's backup to your Google account, like other apps.
+
+## Importing a PhonePe statement
+
+PhonePe has no API for personal transaction history, so the app reads the statement PDF instead.
+
+1. In PhonePe, open **History → Download Statement** and pick a date range.
+2. Share the PDF to **Expenses** (the app's name on your phone), or tap **Import PhonePe statement** in the app.
+3. Enter the PDF password. PhonePe uses your registered mobile number.
+
+> **Status:** the statement parser is tested against synthetic statements built from public descriptions of
+> PhonePe's format. Layouts differ between PhonePe versions, so a real statement may not import yet.
+> If yours doesn't, see [Checking the parser](#checking-the-parser-against-your-statement) and open an issue.
+> Redact names, phone numbers, UPI IDs and transaction IDs before sharing any statement text.
 
 ## Build and install
+
+Requirements: Android Studio (recent) or JDK 17+ with the Android SDK, compileSdk 37. The app runs on Android 8.0 (API 26) and up.
 
 ```bash
 ./gradlew assembleDebug
 ```
 
-Install on your phone over USB (Developer options → USB debugging on):
+Install on a phone over USB (Developer options → USB debugging):
 
 ```bash
-~/Library/Android/sdk/platform-tools/adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Or send `app/build/outputs/apk/debug/app-debug.apk` to the phone and open it (allow "install unknown apps").
+Or copy `app/build/outputs/apk/debug/app-debug.apk` to the phone and open it (allow "install unknown apps").
 
-## Check the parser against a real statement
+Run the unit tests:
 
-Statements from different PhonePe versions are laid out differently. To check yours without a phone:
+```bash
+./gradlew testDebugUnitTest
+```
 
-1. Put the statement PDF in `samples/` (gitignored).
-2. Put the password in `samples/password.txt`.
+## Checking the parser against your statement
+
+1. Put your statement PDF in `samples/`. This folder is gitignored, so it is never committed.
+2. Put its password in `samples/password.txt`.
 3. Run:
 
 ```bash
@@ -34,12 +90,26 @@ Statements from different PhonePe versions are laid out differently. To check yo
 ```
 
 It prints the parsed transactions and writes the extracted text to `samples/<name>.txt`.
-If nothing parses, that text file shows what `PhonePeParser` has to handle.
+If nothing parses, that text file shows what `PhonePeParser` needs to handle.
 
 ## How the numbers work
 
-- Money received is not counted until you file it under a category, where it counts as a refund.
-- "Not an expense" (self-transfers, lending) is excluded from every total.
+- Money is stored as whole paise, never as floating point.
 - Payments not yet categorized still count against the monthly total.
-- A budget applies from the month you set it onward; changing it never rewrites past months.
+- Money received doesn't count until you file it under a category, where it counts as a refund.
+- "Not an expense" payments are left out of every total.
+- A budget applies from the month you set it onward. Changing it never rewrites past months.
 - Budget alerts fire once at 80% and once at 100%, for the current month only.
+
+## Tech
+
+Kotlin, Jetpack Compose with Material 3, Room, and [pdfbox-android](https://github.com/TomRoush/PdfBox-Android)
+for decrypting and reading the statement. No network, analytics, DI or navigation libraries.
+
+```
+app/src/main/java/com/amir/expense/
+├── data/       Room entities, DAO, repository, budget math
+├── importer/   PDF text extraction and the PhonePe statement parser
+├── alerts/     80% / 100% budget notifications
+└── ui/         Compose screens, theme and shared components
+```
