@@ -11,6 +11,20 @@ object BudgetMath {
             .mapValues { (_, v) -> v.maxBy { it.yearMonth }.amountPaise }
             .filterValues { it > 0 }
 
+    /** What the category budgets add up to: each top-level category's own budget, else the sum of its subcategories'. */
+    fun allocated(budgets: Map<Long, Long>, categories: List<Category>): Long =
+        categories.filter { it.parentId == null }.sumOf { parent ->
+            budgets[parent.id] ?: categories.filter { it.parentId == parent.id }.sumOf { budgets[it.id] ?: 0L }
+        }
+
+    /** The month's overall budget: the total you set yourself, else the sum of category budgets; null when neither exists. */
+    fun overall(budgets: Map<Long, Long>, categories: List<Category>): Long? =
+        budgets[Budget.TOTAL] ?: allocated(budgets, categories).takeIf { it > 0 }
+
+    /** [budgets] with [Budget.TOTAL] filled in from the category budgets when you haven't set your own. */
+    fun withOverall(budgets: Map<Long, Long>, categories: List<Category>): Map<Long, Long> =
+        overall(budgets, categories)?.let { budgets + (Budget.TOTAL to it) } ?: budgets
+
     /** Money out this month: every non-ignored transaction, filed or not yet filed. */
     fun totalSpend(txns: List<Txn>): Long = txns.filterNot { it.ignored }.sumOf { it.amountPaise }
 

@@ -1,6 +1,7 @@
 package com.amir.expense.ui
 
 import android.app.DatePickerDialog
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,8 +24,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.RestoreFromTrash
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -74,38 +78,68 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 
+/** Filter value for the "Deleted" chip; real filters are category ids (>= 1). */
+private const val DELETED = -1L
+
 @Composable
 fun TransactionsScreen(vm: MainViewModel) {
     val txns by vm.txns.collectAsState()
+    val deletedTxns by vm.deletedTxns.collectAsState()
     val categories by vm.categories.collectAsState()
     var filter by remember { mutableStateOf<Long?>(null) }
     var editing by remember { mutableStateOf<Txn?>(null) }
+    var selectedIds by remember { mutableStateOf(emptySet<Long>()) }
 
     val parentOf = categories.associate { it.id to it.parentId }
     val parents = categories.filter { it.parentId == null }
-    val shown = if (filter == null) txns else txns.filter { t -> t.categoryId == filter || t.categoryId?.let { parentOf[it] } == filter }
+    val showingDeleted = filter == DELETED
+    val shown = when (filter) {
+        null -> txns
+        DELETED -> deletedTxns
+        else -> txns.filter { t -> t.categoryId == filter || t.categoryId?.let { parentOf[it] } == filter }
+    }
+    // Rows can leave the list while selected (filed, deleted, month switched): only count what's on screen.
+    val selected = shown.filter { it.id in selectedIds }
+    val selecting = selected.isNotEmpty()
     val zone = ZoneId.systemDefault()
     val byDay = shown.groupBy { Instant.ofEpochMilli(it.timestamp).atZone(zone).toLocalDate() }
 
+    fun toggle(txn: Txn) { selectedIds = if (txn.id in selectedIds) selectedIds - txn.id else selectedIds + txn.id }
+    BackHandler(enabled = selecting) { selectedIds = emptySet() }
+
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LazyColumn(
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = if (selecting) 160.dp else 96.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             item { ScreenHeader("Spends", vm) }
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     item {
                         FilterChip(
-                            selected = filter == null, onClick = { filter = null }, label = { Text("All") },
+                            selected = filter == null, onClick = { filter = null; selectedIds = emptySet() }, label = { Text("All") },
                             shape = RoundedCornerShape(12.dp), colors = chipColors(),
                         )
                     }
                     items(parents, key = { it.id }) { p ->
                         val look = lookOf(p.id, categories)
                         FilterChip(
-                            selected = filter == p.id, onClick = { filter = if (filter == p.id) null else p.id },
+                            selected = filter == p.id, onClick = { filter = if (filter == p.id) null else p.id; selectedIds = emptySet() },
                             label = { Text(p.name) },
                             leadingIcon = { look.icon?.let { Icon(it, contentDescription = null, tint = look.color, modifier = Modifier.size(18.dp)) } },
                             shape = RoundedCornerShape(12.dp), colors = chipColors(),
                         )
+                    }
+                    // Only there when this month has deleted payments (or you're looking at them).
+                    if (deletedTxns.isNotEmpty() || showingDeleted) {
+                        item(key = "deleted") {
+                            FilterChip(
+                                selected = showingDeleted, onClick = { filter = if (showingDeleted) null else DELETED; selectedIds = emptySet() },
+                                label = { Text("Deleted (${deletedTxns.size})") },
+                                leadingIcon = { Icon(Icons.Rounded.DeleteOutline, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                shape = RoundedCornerShape(12.dp), colors = chipColors(),
+                            )
+                        }
                     }
                 }
             }
@@ -113,16 +147,31 @@ fun TransactionsScreen(vm: MainViewModel) {
                 Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.primaryContainer) {
                     Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Spent", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f))
-                            Text(formatRupees(BudgetMath.totalSpend(shown)), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            if (showingDeleted) {
+                                Text("Deleted", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f))
+                                Text(
+                                    "Not counted anywhere. Tap payments to pick them, then restore.",
+                                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                            } else {
+                                Text("Spent", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f))
+                                Text(formatRupees(BudgetMath.totalSpend(shown)), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            }
                         }
+                        Spacer(Modifier.width(12.dp))
                         Text(plural(shown.size, "payment"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     }
                 }
             }
             if (shown.isEmpty()) {
                 item {
-                    AppCard { EmptyState(Icons.AutoMirrored.Rounded.ReceiptLong, "No payments yet", "Import a PhonePe statement, or add a cash expense with the button below.") }
+                    AppCard {
+                        if (showingDeleted) {
+                            EmptyState(Icons.Rounded.DeleteOutline, "Nothing deleted", "Payments you delete this month show up here, so you can bring them back.")
+                        } else {
+                            EmptyState(Icons.AutoMirrored.Rounded.ReceiptLong, "No payments yet", "Import a PhonePe statement, or add a cash expense with the button below.")
+                        }
+                    }
                 }
             }
             byDay.forEach { (day, list) ->
@@ -130,26 +179,49 @@ fun TransactionsScreen(vm: MainViewModel) {
                     Column {
                         Row(Modifier.padding(horizontal = 4.dp, vertical = 4.dp)) {
                             Text(dayLabel(day), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                            BudgetMath.totalSpend(list).takeIf { it != 0L }?.let {
+                            BudgetMath.totalSpend(list).takeIf { it != 0L && !showingDeleted }?.let {
                                 Text(formatRupees(it), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                         AppCard(padding = 8.dp) {
-                            list.forEach { txn -> TxnRow(txn, categories, showDate = false) { editing = txn } }
+                            list.forEach { txn ->
+                                TxnRow(
+                                    txn, categories, showDate = false,
+                                    selected = txn.id in selectedIds,
+                                    onLongClick = { toggle(txn) },
+                                    // Deleted payments have nothing to edit: a tap picks them for restoring.
+                                    onClick = { if (selecting || showingDeleted) toggle(txn) else editing = txn },
+                                )
+                            }
                         }
                     }
                 }
             }
         }
-        ExtendedFloatingActionButton(
-            onClick = { editing = blankTxn(vm.month.value) },
-            icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
-            text = { Text("Add expense") },
-            shape = RoundedCornerShape(18.dp),
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-        )
+        when {
+            selecting -> SelectionBar(
+                count = selected.size,
+                onClose = { selectedIds = emptySet() },
+                onSelectAll = if (selected.size < shown.size) { { selectedIds = shown.map { it.id }.toSet() } } else null,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp),
+            ) {
+                if (showingDeleted) {
+                    SelectionAction(Icons.Rounded.RestoreFromTrash, "Restore") { vm.restore(selected); selectedIds = emptySet() }
+                } else {
+                    SelectionAction(Icons.Rounded.Block, "Not expense") { vm.markNotExpense(selected); selectedIds = emptySet() }
+                    SelectionAction(Icons.Rounded.Delete, "Delete", danger = true) { vm.delete(selected); selectedIds = emptySet() }
+                }
+            }
+            !showingDeleted -> ExtendedFloatingActionButton(
+                onClick = { editing = blankTxn(vm.month.value) },
+                icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
+                text = { Text("Add expense") },
+                shape = RoundedCornerShape(18.dp),
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            )
+        }
     }
 
     editing?.let { TxnEditor(vm, it, categories, onClose = { editing = null }) }
@@ -275,14 +347,14 @@ private fun TxnEditor(vm: MainViewModel, txn: Txn, categories: List<Category>, o
             }
             if (confirmDelete) {
                 Text(
-                    if (txn.source == Txn.SOURCE_PHONEPE) "Delete? Re-importing the statement brings it back. To stop counting it, turn off “Count as expense” instead."
-                    else "Delete this expense?",
+                    if (txn.source == Txn.SOURCE_PHONEPE) "Delete? It moves to Deleted in Spends. Importing this statement again won't add it back; it shows as deleted with an option to restore."
+                    else "Delete this expense? It moves to Deleted in Spends, where you can restore it.",
                     color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium,
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (txn.id != 0L) {
-                    TextButton(onClick = { if (confirmDelete) { vm.delete(txn); onClose() } else confirmDelete = true }) {
+                    TextButton(onClick = { if (confirmDelete) { vm.delete(listOf(txn)); onClose() } else confirmDelete = true }) {
                         Icon(Icons.Rounded.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text(if (confirmDelete) "Confirm delete" else "Delete", color = MaterialTheme.colorScheme.error)

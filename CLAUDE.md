@@ -34,9 +34,10 @@ so `run-as` fails there.
 ## Architecture
 
 Data flows one way. Room DAO `Flow`s go to `Repository` (`data/`), then to `MainViewModel`
-StateFlows, then to Compose screens via `collectAsState`. `App` builds the database and the
-`Repository` singleton. There is no DI and no navigation library: `ui/AppRoot.kt` switches tabs with
-an enum plus `BackHandler`, and every screen takes the single `MainViewModel`.
+StateFlows, then to Compose screens via `collectAsState`. `App` builds the database, the
+`Repository` singleton and `DriveSync`. There is no DI and no navigation library: `ui/AppRoot.kt` switches
+tabs with an enum plus `BackHandler`, and every screen takes the single `MainViewModel`. One-off messages
+(Undo snackbars) go through `vm.notices`; `AppRoot` shows them.
 
 - **Month on screen:** `vm.month` drives `txns`, `prevTxns` and `budgets` through `flatMapLatest`.
   Screens read `month` and `txns` separately, and `txns` lags a frame after a month switch. Any code
@@ -48,9 +49,16 @@ an enum plus `BackHandler`, and every screen takes the single `MainViewModel`.
   non-ignored transaction, including uncategorized ones. Category spend rolls children into their
   parent. Imported credits arrive with `ignored = true`. Filing a credit under a category un-ignores
   it, so it subtracts there as a refund.
+- **Soft delete:** deleting sets `Txn.deletedAt`; the row stays so its Transaction ID keeps blocking
+  re-imports. Every DAO query that lists or totals payments must filter `deletedAt IS NULL`. Spends →
+  Deleted lists them for restoring, and `Repository.import` reports matching ones as `deletedBefore`
+  so the import review can offer Restore. Only undoing an import (and Drive restore) removes rows.
 - **Budgets are effective-dated:** a `budget` row is `(yearMonth, categoryId)`, and a month uses the
   latest row at or before it. Amount 0 means "removed", and `categoryId 0` (`Budget.TOTAL`) is the
-  monthly total. `vm.setBudget` writes for the month on screen, so past months never change.
+  monthly total you set yourself. Without one, the overall budget is the sum of category budgets
+  (`BudgetMath.overall`: each parent's own budget, else its children's). Home, Settings and alerts all
+  use that; `ui/BudgetsSheet.kt` edits every budget. `vm.setBudget` writes for the month on screen, so
+  past months never change.
 - **Alerts:** every `Repository` mutation calls `BudgetAlerts.check(month)`. It only fires for the
   current calendar month, and the `alert_fired` table makes each 80% / 100% alert fire once per month
   per budget.
@@ -59,6 +67,9 @@ an enum plus `BackHandler`, and every screen takes the single `MainViewModel`.
   - The parser splits text on `MMM d, yyyy` dates and searches each record for its fields, because
     field order varies between statement versions. Records without a Transaction ID are skipped.
   - Dedupe is the unique `externalId` (Transaction ID) with insert-IGNORE.
+  - Each import is an `ImportBatch`; its rows carry `importId`, so `undoImport` hard-deletes exactly
+    what it added (also from Settings → Imports). Rows from before v2 have no batch.
+  - `ImportState.Done` shows `ui/ImportReviewSheet.kt`: undo, delete picked rows, restore `deletedBefore`.
   - Auto-file rules apply to debits only.
   - The last password is kept in SharedPreferences `settings` / `pdfPassword`.
   - Statements arrive by share or view intent (`MainActivity.handleShare`) or the `OpenDocument` picker.
@@ -69,9 +80,20 @@ an enum plus `BackHandler`, and every screen takes the single `MainViewModel`.
   maps colors and icons by seed id: ids are 1..N in `SEED` order, which is why renames keep their
   style. Never reorder `SEED` or insert into the middle of it; append only. User-created categories
   fall back to name lookup, then neutral gray.
-- **Schema:** `AppDatabase` is version 1 with `exportSchema = false` and no migrations. v1.0.0 is
-  public, so any entity change needs a version bump and a `Migration`. Otherwise existing users'
-  apps crash on upgrade.
+- **Schema:** `AppDatabase` is version 2 with `exportSchema = false`; `MIGRATION_1_2` added
+  `txn.importId`, `txn.deletedAt` and the `import_batch` table. v1.0.0 is public, so any entity change
+  needs a version bump, a `Migration`, and a new case in `MigrationTest` (real SQLite: the migrated
+  schema must equal a fresh install's, which is what Room checks on open). Otherwise existing users'
+  apps crash on upgrade. New tables and columns also go into `data/Backup.kt`.
+- **Google Drive backup (`sync/`):** `DriveSync` gets tokens from Play services `AuthorizationClient`
+  (scope `drive.appdata`, one consent screen, then silent), and `DriveApi` calls Drive v3 over
+  HttpURLConnection: one JSON file in the hidden appDataFolder. `Backup` encodes the whole database
+  deterministically (same data, same bytes); `SyncPlan` compares MD5s of what this install last synced,
+  local data and Drive's file, and uploads only if Drive still holds this install's last backup.
+  Otherwise it restores automatically when the app is empty (a reinstall), else asks (Restore / Replace).
+  `DriveSyncWorker` runs daily via WorkManager. The OAuth client lives in Google Cloud, keyed by package
+  name and signing SHA-1, not in code: see `docs/google-drive-setup.md`. It needs the INTERNET permission,
+  which the app uses for nothing else.
 
 ## UI conventions
 
@@ -86,7 +108,8 @@ new screens in both light and dark mode on the emulator. The XML themes (`values
 ## Tests
 
 JVM unit tests only. `NumberFormat` on the JVM lacks Indian lakh grouping, so don't assert formatted
-rupee strings above ₹99,999. `SampleStatementTest` reads `samples/*.pdf` with the password in
+rupee strings above ₹99,999. Android's `org.json` is a stub on the JVM, so tests use `org.json:json`;
+`MigrationTest` runs migrations on real SQLite through `sqlite-jdbc`. `SampleStatementTest` reads `samples/*.pdf` with the password in
 `samples/password.txt`, writes the extracted text to `samples/<name>.txt`, and is skipped when no PDF
 is present. `samples/` is gitignored.
 
@@ -96,9 +119,12 @@ run `SampleStatementTest` first and adapt `PhonePeParser` to the extracted text.
 ## Releasing
 
 1. Bump `versionCode` (must increase) and `versionName` in `app/build.gradle.kts`.
+   Before releasing a schema change, install the previous release, add data, then install the new APK
+   over it and open it.
 2. `./gradlew assembleRelease`. Signing reads `keystore.properties` and `release.jks` at the repo
    root. Both are gitignored and must be the same key forever, or updates won't install over
-   existing copies.
+   existing copies. The release key's SHA-1 must also be registered as an Android OAuth client
+   (`docs/google-drive-setup.md`), or Drive sign-in fails; exercise Drive sync on the release APK.
 3. Commit, tag `vX.Y.Z`, and push the branch and the tag.
 4. Create a GitHub release for the tag and attach the APK named exactly `kharcha.apk`. The README
    links to `releases/latest/download/kharcha.apk`. Put the APK's SHA-256 in the release notes. `gh`

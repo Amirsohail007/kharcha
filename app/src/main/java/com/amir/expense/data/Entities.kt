@@ -16,6 +16,8 @@ data class Category(
 /**
  * One money movement. amountPaise > 0 is money out (expense), < 0 is money in (refund/credit).
  * externalId is the PhonePe Transaction ID; the unique index makes re-imports a no-op.
+ * Deleting only sets [deletedAt]: the row keeps its Transaction ID, so importing the same
+ * statement again shows it as deleted instead of adding it back.
  */
 @Entity(
     tableName = "txn",
@@ -33,6 +35,10 @@ data class Txn(
     val categoryId: Long? = null,
     /** Not an expense (self-transfer, money received...). Excluded from every total. */
     val ignored: Boolean = false,
+    /** The [ImportBatch] that added this row. Null for manual entries and for imports made before v2. */
+    val importId: Long? = null,
+    /** When it was deleted (epoch millis). Deleted rows are left out of every list and total. */
+    val deletedAt: Long? = null,
 ) {
     companion object {
         const val SOURCE_MANUAL = "MANUAL"
@@ -58,3 +64,24 @@ data class Budget(val yearMonth: Int, val categoryId: Long, val amountPaise: Lon
 /** Remembers which 80% / 100% alerts already fired, so each fires once per month. */
 @Entity(tableName = "alert_fired", primaryKeys = ["yearMonth", "categoryId", "level"])
 data class AlertFired(val yearMonth: Int, val categoryId: Long, val level: Int)
+
+/** One statement import, so it can be undone as a whole. */
+@Entity(tableName = "import_batch")
+data class ImportBatch(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val importedAt: Long,
+    val fileName: String?,
+    /** Oldest and newest payment in the statement (epoch millis). */
+    val firstTimestamp: Long,
+    val lastTimestamp: Long,
+)
+
+/** An import with how many payments it added, for the import history. */
+data class ImportSummary(
+    val id: Long,
+    val importedAt: Long,
+    val fileName: String?,
+    val firstTimestamp: Long,
+    val lastTimestamp: Long,
+    val payments: Int,
+)

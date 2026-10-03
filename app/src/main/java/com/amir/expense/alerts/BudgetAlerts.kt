@@ -32,7 +32,7 @@ class BudgetAlerts(private val context: Context, private val dao: ExpenseDao) {
         val (start, end) = ym.range()
         val txns = dao.txnsBetweenOnce(start, end)
         val categories = dao.categoriesOnce()
-        val budgets = BudgetMath.effectiveBudgets(dao.budgetsUpToOnce(ym.key), ym.key)
+        val budgets = BudgetMath.withOverall(BudgetMath.effectiveBudgets(dao.budgetsUpToOnce(ym.key), ym.key), categories)
         val spendByCat = BudgetMath.spendByCategory(txns, categories)
         val names = categories.associate { it.id to it.name }
 

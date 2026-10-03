@@ -1,13 +1,18 @@
 package com.amir.expense.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -18,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material3.AssistChip
@@ -50,36 +56,66 @@ fun InboxScreen(vm: MainViewModel) {
     val categories by vm.categories.collectAsState()
     val top by vm.topCategoryIds.collectAsState()
     var picking by remember { mutableStateOf<Txn?>(null) }
+    var selectedIds by remember { mutableStateOf(emptySet<Long>()) }
+    // Filed payments leave the inbox: only count what's still here.
+    val selected = inbox.filter { it.id in selectedIds }
+    val selecting = selected.isNotEmpty()
+    fun toggle(txn: Txn) { selectedIds = if (txn.id in selectedIds) selectedIds - txn.id else selectedIds + txn.id }
+    BackHandler(enabled = selecting) { selectedIds = emptySet() }
 
     // One-tap suggestions: your most-used categories, else the first leaf of each top-level category.
     val leaves = categories.filter { c -> categories.none { it.parentId == c.id } }
     val firstPerParent = categories.filter { it.parentId == null }.mapNotNull { p -> leaves.firstOrNull { it.parentId == p.id || it.id == p.id } }
     val quick = (top.mapNotNull { id -> leaves.firstOrNull { it.id == id } } + firstPerParent).distinct().take(2)
 
-    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item {
-            ScreenHeader("Inbox")
-            Text(
-                if (inbox.isEmpty()) "Imported payments land here until you file them."
-                else "${plural(inbox.size, "payment")} to sort. Tap a category to file one, or More to auto-file that merchant too.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        if (inbox.isEmpty()) {
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = if (selecting) 160.dp else 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             item {
-                AppCard {
-                    EmptyState(
-                        Icons.Rounded.TaskAlt,
-                        "All caught up",
-                        "In PhonePe open History → Download Statement, then share the PDF to Expenses.",
-                    ) { ImportButton(vm) }
+                ScreenHeader("Inbox")
+                Text(
+                    if (inbox.isEmpty()) "Imported payments land here until you file them."
+                    else "${plural(inbox.size, "payment")} to sort. Tap a category to file one, or More to auto-file that merchant too. " +
+                        "Press and hold to pick several to delete.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (inbox.isEmpty()) {
+                item {
+                    AppCard {
+                        EmptyState(
+                            Icons.Rounded.TaskAlt,
+                            "All caught up",
+                            "In PhonePe open History → Download Statement, then share the PDF to Expenses.",
+                        ) { ImportButton(vm) }
+                    }
+                }
+            } else {
+                item { ImportButton(vm, label = "Import another statement", tonal = true) }
+                items(inbox, key = { it.id }) { txn ->
+                    InboxCard(
+                        txn, quick, categories,
+                        selected = txn.id in selectedIds,
+                        selecting = selecting,
+                        onQuick = { vm.categorize(txn, it, remember = false) },
+                        onMore = { if (selecting) toggle(txn) else picking = txn },
+                        onLongClick = { toggle(txn) },
+                    )
                 }
             }
-        } else {
-            item { ImportButton(vm, label = "Import another statement", tonal = true) }
-            items(inbox, key = { it.id }) { txn ->
-                InboxCard(txn, quick, categories, onQuick = { vm.categorize(txn, it, remember = false) }, onMore = { picking = txn })
+        }
+        if (selecting) {
+            SelectionBar(
+                count = selected.size,
+                onClose = { selectedIds = emptySet() },
+                onSelectAll = if (selected.size < inbox.size) { { selectedIds = inbox.map { it.id }.toSet() } } else null,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp),
+            ) {
+                SelectionAction(Icons.Rounded.Block, "Not expense") { vm.markNotExpense(selected); selectedIds = emptySet() }
+                SelectionAction(Icons.Rounded.Delete, "Delete", danger = true) { vm.delete(selected); selectedIds = emptySet() }
             }
         }
     }
@@ -87,14 +123,25 @@ fun InboxScreen(vm: MainViewModel) {
     picking?.let { txn -> CategorizeSheet(vm, txn, categories, onClose = { picking = null }) }
 }
 
+/** While [selecting], a tap picks the card and the category chips are hidden. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun InboxCard(txn: Txn, quick: List<Category>, categories: List<Category>, onQuick: (Long) -> Unit, onMore: () -> Unit) {
-    AppCard {
+private fun InboxCard(
+    txn: Txn,
+    quick: List<Category>,
+    categories: List<Category>,
+    selected: Boolean,
+    selecting: Boolean,
+    onQuick: (Long) -> Unit,
+    onMore: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    AppCard(color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLowest) {
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = onMore),
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).combinedClickable(onClick = onMore, onLongClick = onLongClick),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            LetterAvatar(txn.merchant, size = 44.dp)
+            if (selected) SelectedBadge(size = 44.dp) else LetterAvatar(txn.merchant, size = 44.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(txn.merchant, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -102,6 +149,7 @@ private fun InboxCard(txn: Txn, quick: List<Category>, categories: List<Category
             }
             Text(formatRupees(abs(txn.amountPaise)), style = MaterialTheme.typography.titleMedium)
         }
+        if (selecting) return@AppCard
         Spacer(Modifier.height(12.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             quick.forEach { c ->

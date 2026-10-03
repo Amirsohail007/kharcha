@@ -69,7 +69,17 @@ dependencies {
     // Opens the password-protected PhonePe statement and extracts its text.
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
+    // Google Drive backup: Play services sign-in for the Drive token, WorkManager for the daily sync.
+    // Drive itself is called over plain HTTPS (sync/DriveApi.kt), not the Google API client library.
+    implementation("com.google.android.gms:play-services-auth:22.0.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
+    implementation("androidx.work:work-runtime-ktx:2.12.0")
+
     testImplementation("junit:junit:4.13.2")
+    // Android's org.json is a stub in JVM tests; the backup codec tests need the real thing.
+    testImplementation("org.json:json:20260814")
+    // Real SQLite for MigrationTest.
+    testImplementation("org.xerial:sqlite-jdbc:3.53.4.0")
     // Desktop PDFBox: lets a JVM test read a real statement from samples/ without a phone.
     testImplementation("org.apache.pdfbox:pdfbox:2.0.37")
 }

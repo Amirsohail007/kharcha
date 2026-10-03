@@ -45,6 +45,25 @@ class BudgetMathTest {
         assertEquals(550_00L, BudgetMath.totalSpend(txns))
     }
 
+    @Test fun overallIsSumOfCategoriesUnlessSet() {
+        val travel = Category(id = 5, name = "Travel")
+        val office = Category(id = 6, name = "Office", parentId = 5)
+        val cats = cats + listOf(travel, office)
+
+        // Food's own budget counts, not its subcategories'; Travel has none, so its subcategories' sum counts.
+        val budgets = mapOf(1L to 10_000_00L, 2L to 3_000_00L, 6L to 5_000_00L)
+        assertEquals(15_000_00L, BudgetMath.allocated(budgets, cats))
+        assertEquals(15_000_00L, BudgetMath.overall(budgets, cats))
+        assertEquals(15_000_00L, BudgetMath.withOverall(budgets, cats)[Budget.TOTAL])
+
+        // A total you set yourself wins over the sum.
+        assertEquals(20_000_00L, BudgetMath.overall(budgets + (Budget.TOTAL to 20_000_00L), cats))
+
+        // No budgets at all: no overall, and no TOTAL entry for alerts.
+        assertEquals(null, BudgetMath.overall(emptyMap(), cats))
+        assertEquals(emptyMap<Long, Long>(), BudgetMath.withOverall(emptyMap(), cats))
+    }
+
     @Test fun alertLevels() {
         assertEquals(emptyList<Int>(), BudgetMath.crossedLevels(79_99, 100_00))
         assertEquals(listOf(80), BudgetMath.crossedLevels(80_00, 100_00))

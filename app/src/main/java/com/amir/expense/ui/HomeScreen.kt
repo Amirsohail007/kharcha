@@ -29,6 +29,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -42,7 +43,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.amir.expense.MainViewModel
-import com.amir.expense.data.Budget
 import com.amir.expense.data.BudgetMath
 import com.amir.expense.data.Category
 import com.amir.expense.data.formatRupees
@@ -56,19 +56,24 @@ fun HomeScreen(vm: MainViewModel, openInbox: () -> Unit) {
     val categories by vm.categories.collectAsState()
     val budgets by vm.budgets.collectAsState()
     val inbox by vm.inbox.collectAsState()
-    var editTotal by remember { mutableStateOf(false) }
+    var editBudgets by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(emptySet<Long>()) }
 
     val spent = BudgetMath.totalSpend(txns)
+    val overall = BudgetMath.overall(budgets, categories)
     val byCategory = BudgetMath.spendByCategory(txns, categories)
     val parents = categories.filter { it.parentId == null }
         .sortedWith(compareByDescending<Category> { byCategory[it.id] ?: 0L }.thenByDescending { budgets[it.id] ?: 0L })
 
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { ScreenHeader(month.month.name.lowercase().replaceFirstChar { it.uppercase() }, vm) }
-        item { HeroCard(spent, budgets[Budget.TOTAL], month, onEdit = { editTotal = true }) }
+        item { HeroCard(spent, overall, month, onEdit = { editBudgets = true }) }
         if (inbox.isNotEmpty()) item { SortBanner(inbox.size, openInbox) }
-        item { SectionLabel("Categories") }
+        item {
+            SectionLabel("Categories") {
+                TextButton(onClick = { editBudgets = true }) { Text("Budgets") }
+            }
+        }
         item {
             AppCard(padding = 8.dp) {
                 parents.forEachIndexed { i, parent ->
@@ -98,15 +103,7 @@ fun HomeScreen(vm: MainViewModel, openInbox: () -> Unit) {
         }
     }
 
-    if (editTotal) {
-        AmountDialog(
-            title = "Monthly budget",
-            initialPaise = budgets[Budget.TOTAL],
-            note = "Applies from this month onward.",
-            onSave = { vm.setBudget(Budget.TOTAL, it) },
-            onDismiss = { editTotal = false },
-        )
-    }
+    if (editBudgets) BudgetsSheet(vm, onDismiss = { editBudgets = false })
 }
 
 /** The headline: money left this month on the brand color, with a slim meter and daily allowance. */
@@ -127,7 +124,7 @@ private fun HeroCard(spent: Long, budget: Long?, month: YearMonth, onEdit: () ->
                 if (budget != null) {
                     // IconButton keeps the 48dp touch target while the pencil stays small.
                     IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Rounded.Edit, contentDescription = "Edit monthly budget", tint = soft, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Rounded.Edit, contentDescription = "Edit budgets", tint = soft, modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -140,7 +137,7 @@ private fun HeroCard(spent: Long, budget: Long?, month: YearMonth, onEdit: () ->
                 Button(
                     onClick = onEdit, shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = HeroIndigo),
-                ) { Text("Set a monthly budget") }
+                ) { Text("Set budgets") }
                 return@Column
             }
             Spacer(Modifier.height(16.dp))

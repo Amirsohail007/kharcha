@@ -1,7 +1,9 @@
 package com.amir.expense.ui
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,9 +37,14 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +59,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.amir.expense.ImportState
 import com.amir.expense.MainViewModel
+import kotlinx.coroutines.flow.collectLatest
 
 private enum class Tab(val label: String, val icon: ImageVector) {
     Home("Home", Icons.Rounded.Home),
@@ -67,8 +75,30 @@ fun AppRoot(vm: MainViewModel) {
     val inbox by vm.inbox.collectAsState()
     BackHandler(enabled = tab != Tab.Home) { tab = Tab.Home }
 
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        // A newer message replaces the one on screen.
+        vm.notices.collectLatest { notice ->
+            val result = snackbar.showSnackbar(
+                notice.text,
+                actionLabel = if (notice.undo != null) "Undo" else null,
+                duration = if (notice.undo != null) SnackbarDuration.Long else SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed) notice.undo?.invoke()
+        }
+    }
+
+    // Google's "allow access to Drive" screen, asked for by Settings → Connect Google Drive.
+    val consent = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
+        vm.finishDriveConnect(it.resultCode == Activity.RESULT_OK, it.data)
+    }
+    LaunchedEffect(Unit) {
+        vm.driveConsent.collect { consent.launch(IntentSenderRequest.Builder(it.intentSender).build()) }
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest, tonalElevation = 0.dp) {
                 Tab.entries.forEach { t ->
@@ -165,27 +195,7 @@ private fun ImportDialogs(vm: MainViewModel, onDone: () -> Unit) {
                 }
             },
         )
-        is ImportState.Done -> {
-            val r = s.result
-            AlertDialog(
-                onDismissRequest = vm::dismissImport,
-                title = { Text(if (r.added > 0) "${plural(r.added, "payment")} imported" else "Nothing new") },
-                text = {
-                    Text(
-                        listOfNotNull(
-                            if (r.autoFiled > 0) "${r.autoFiled} filed automatically" else null,
-                            if (r.toFile > 0) "${r.toFile} waiting in your inbox" else null,
-                            if (r.duplicates > 0) "${r.duplicates} already imported, skipped" else null,
-                        ).joinToString("\n").ifEmpty { "All set." },
-                    )
-                },
-                confirmButton = {
-                    Button(onClick = { vm.dismissImport(); if (r.toFile > 0) onDone() }, shape = RoundedCornerShape(14.dp)) {
-                        Text(if (r.toFile > 0) "Sort them" else "Done")
-                    }
-                },
-            )
-        }
+        is ImportState.Done -> ImportReviewSheet(vm, s.result, onSort = onDone)
         is ImportState.Failed -> AlertDialog(
             onDismissRequest = vm::dismissImport,
             title = { Text("Couldn't import") },

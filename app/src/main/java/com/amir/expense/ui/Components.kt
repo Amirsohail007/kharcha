@@ -1,7 +1,8 @@
 package com.amir.expense.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,8 +25,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -63,10 +70,12 @@ import kotlin.math.abs
 
 private val TIME = DateTimeFormatter.ofPattern("h:mm a")
 private val ROW_DATE = DateTimeFormatter.ofPattern("d MMM, h:mm a")
+private val DAY = DateTimeFormatter.ofPattern("d MMM")
 private val MONTH = DateTimeFormatter.ofPattern("MMMM yyyy")
 
 fun formatWhen(timestamp: Long): String = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(ROW_DATE)
 fun formatTime(timestamp: Long): String = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(TIME)
+fun formatDay(timestamp: Long): String = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(DAY)
 
 /** "Food › Delivery" for leaf categories. */
 fun categoryLabel(id: Long?, categories: List<Category>): String? {
@@ -83,8 +92,13 @@ fun paiseToInput(paise: Long?): String =
 
 /** White rounded card on the gray canvas. */
 @Composable
-fun AppCard(modifier: Modifier = Modifier, padding: Dp = 16.dp, content: @Composable ColumnScope.() -> Unit) {
-    Surface(modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLowest) {
+fun AppCard(
+    modifier: Modifier = Modifier,
+    padding: Dp = 16.dp,
+    color: Color = MaterialTheme.colorScheme.surfaceContainerLowest,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = color) {
         Column(Modifier.padding(padding), content = content)
     }
 }
@@ -126,19 +140,40 @@ fun Meter(fraction: Float, color: Color, modifier: Modifier = Modifier, height: 
     }
 }
 
-/** One payment: category badge (or merchant initial), name, when/category, amount. */
+/**
+ * One payment: category badge (or merchant initial), name, when/category, amount.
+ * Long-press starts selecting; a selected row shows a check instead of its badge.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun TxnRow(txn: Txn, categories: List<Category>, showDate: Boolean = true, onClick: () -> Unit) {
+fun TxnRow(
+    txn: Txn,
+    categories: List<Category>,
+    showDate: Boolean = true,
+    selected: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
+    onClick: (() -> Unit)? = null,
+) {
     val credit = txn.amountPaise < 0
+    val struck = txn.ignored || txn.deletedAt != null
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+            .then(if (onClick != null) Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick) else Modifier)
+            .padding(vertical = 10.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (txn.categoryId == null) LetterAvatar(txn.merchant) else CategoryBadge(lookOf(txn.categoryId, categories))
+        when {
+            selected -> SelectedBadge()
+            txn.categoryId == null -> LetterAvatar(txn.merchant)
+            else -> CategoryBadge(lookOf(txn.categoryId, categories))
+        }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(txn.merchant, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val status = when {
+                txn.deletedAt != null -> "Deleted"
                 txn.ignored -> "Not counted"
                 txn.categoryId == null -> "Uncategorized"
                 else -> categories.firstOrNull { it.id == txn.categoryId }?.name ?: "Uncategorized"
@@ -155,12 +190,73 @@ fun TxnRow(txn: Txn, categories: List<Category>, showDate: Boolean = true, onCli
             (if (credit) "+" else "−") + formatRupees(abs(txn.amountPaise)),
             style = MaterialTheme.typography.titleSmall,
             color = when {
-                txn.ignored -> MaterialTheme.colorScheme.onSurfaceVariant
+                struck -> MaterialTheme.colorScheme.onSurfaceVariant
                 credit -> successColor
                 else -> MaterialTheme.colorScheme.onSurface
             },
-            textDecoration = if (txn.ignored) TextDecoration.LineThrough else null,
+            textDecoration = if (struck) TextDecoration.LineThrough else null,
         )
+        trailing?.invoke()
+    }
+}
+
+/** Stands in for a row's badge while it's selected. */
+@Composable
+fun SelectedBadge(size: Dp = 40.dp) {
+    Box(
+        Modifier.size(size).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(size * 0.32f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(size * 0.55f))
+    }
+}
+
+/** Pinned at the bottom while picking payments: how many, select all, and [actions] (see [SelectionAction]). */
+@Composable
+fun SelectionBar(
+    count: Int,
+    onClose: () -> Unit,
+    onSelectAll: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    actions: @Composable RowScope.() -> Unit,
+) {
+    Surface(
+        modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shadowElevation = 8.dp,
+    ) {
+        Column(Modifier.padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, contentDescription = "Stop selecting") }
+                Text("$count selected", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                if (onSelectAll != null) TextButton(onClick = onSelectAll) { Text("Select all") }
+            }
+            Row(Modifier.fillMaxWidth().padding(start = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), content = actions)
+        }
+    }
+}
+
+/** One labeled button in a [SelectionBar]; [danger] colors it as destructive. */
+@Composable
+fun RowScope.SelectionAction(icon: ImageVector, label: String, danger: Boolean = false, onClick: () -> Unit) {
+    FilledTonalButton(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.weight(1f),
+        contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+        colors = if (danger) {
+            ButtonDefaults.filledTonalButtonColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            )
+        } else {
+            ButtonDefaults.filledTonalButtonColors()
+        },
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

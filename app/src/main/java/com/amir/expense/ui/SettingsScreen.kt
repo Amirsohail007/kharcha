@@ -21,14 +21,20 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.CloudSync
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Savings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,14 +51,24 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.amir.expense.MainViewModel
 import com.amir.expense.data.Budget
+import com.amir.expense.data.BudgetMath
 import com.amir.expense.data.Category
+import com.amir.expense.data.ImportSummary
 import com.amir.expense.data.formatRupees
 import com.amir.expense.data.parseRupees
+import com.amir.expense.sync.DriveSync
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 private sealed interface SettingsDialog {
-    data object TotalBudget : SettingsDialog
+    data object Budgets : SettingsDialog
     data class Edit(val category: Category) : SettingsDialog
     data class Add(val parent: Category?) : SettingsDialog
+    data class UndoImport(val batch: ImportSummary) : SettingsDialog
+    data object RestoreDrive : SettingsDialog
+    data object OverwriteDrive : SettingsDialog
+    data object DisconnectDrive : SettingsDialog
 }
 
 @Composable
@@ -61,12 +77,12 @@ fun SettingsScreen(vm: MainViewModel) {
     val categories by vm.categories.collectAsState()
     val budgets by vm.budgets.collectAsState()
     val rules by vm.rules.collectAsState()
+    val imports by vm.imports.collectAsState()
+    val drive by vm.driveState.collectAsState()
     var dialog by remember { mutableStateOf<SettingsDialog?>(null) }
 
     val parents = categories.filter { it.parentId == null }
-    val total = budgets[Budget.TOTAL]
-    // A parent's own budget, else the sum of its children's.
-    val allocated = parents.sumOf { p -> budgets[p.id] ?: categories.filter { it.parentId == p.id }.sumOf { budgets[it.id] ?: 0L } }
+    val overall = BudgetMath.overall(budgets, categories)
 
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { ScreenHeader("Settings") }
@@ -85,17 +101,29 @@ fun SettingsScreen(vm: MainViewModel) {
         }
 
         item {
+            DriveCard(
+                drive,
+                onConnect = vm::connectDrive,
+                onSync = vm::syncNow,
+                onRestore = { dialog = SettingsDialog.RestoreDrive },
+                onOverwrite = { dialog = SettingsDialog.OverwriteDrive },
+                onAutoSync = vm::setAutoSync,
+                onDisconnect = { dialog = SettingsDialog.DisconnectDrive },
+            )
+        }
+
+        item {
             AppCard(padding = 8.dp) {
                 SettingRow(
                     icon = { IconBox(Icons.Rounded.Savings) },
-                    title = "Monthly budget",
+                    title = "Budgets",
                     subtitle = when {
-                        total == null -> "Not set"
-                        allocated <= total -> "${formatRupees(total - allocated)} not assigned to a category"
-                        else -> "Category budgets exceed it by ${formatRupees(allocated - total)}"
+                        budgets[Budget.TOTAL] != null -> "Monthly total set by you"
+                        overall != null -> "Monthly total is the sum of category budgets"
+                        else -> "Give Food, Travel and the rest a monthly budget"
                     },
-                    value = total?.let(::formatRupees),
-                    onClick = { dialog = SettingsDialog.TotalBudget },
+                    value = overall?.let(::formatRupees),
+                    onClick = { dialog = SettingsDialog.Budgets },
                 )
             }
         }
@@ -163,12 +191,37 @@ fun SettingsScreen(vm: MainViewModel) {
             }
         }
 
+        if (imports.isNotEmpty()) {
+            item { SectionLabel("Imports") }
+            item {
+                AppCard(padding = 8.dp) {
+                    imports.take(10).forEachIndexed { i, batch ->
+                        if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                        Row(Modifier.padding(start = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            IconBox(Icons.Rounded.Description)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(batch.fileName ?: "PhonePe statement", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    "${plural(batch.payments, "payment")} · ${formatDay(batch.firstTimestamp)} – ${formatDay(batch.lastTimestamp)}\n" +
+                                        "Imported ${formatWhen(batch.importedAt)}",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            TextButton(onClick = { dialog = SettingsDialog.UndoImport(batch) }) { Text("Undo") }
+                        }
+                    }
+                }
+            }
+        }
+
         item {
             Row(Modifier.padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "Your data stays on this phone. If Android backup is on, it's also copied to your Google account.",
+                    "Your data stays on this phone. Google Drive backup, when you turn it on, copies it to a private folder " +
+                        "in your own Drive that only this app can read. If Android backup is on, it's also in your phone's backup.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -177,11 +230,34 @@ fun SettingsScreen(vm: MainViewModel) {
 
     when (val d = dialog) {
         null -> Unit
-        SettingsDialog.TotalBudget -> AmountDialog(
-            title = "Monthly budget",
-            initialPaise = total,
-            note = "Applies from ${monthTitle(month)} onward.",
-            onSave = { vm.setBudget(Budget.TOTAL, it) },
+        SettingsDialog.Budgets -> BudgetsSheet(vm, onDismiss = { dialog = null })
+        is SettingsDialog.UndoImport -> ConfirmDialog(
+            title = "Undo this import?",
+            text = "Removes the ${plural(d.batch.payments, "payment")} it added, including any you've sorted or deleted since. " +
+                "Importing the statement again adds them back.",
+            confirm = "Undo import",
+            onConfirm = { vm.undoImport(d.batch.id, d.batch.payments) },
+            onDismiss = { dialog = null },
+        )
+        SettingsDialog.RestoreDrive -> ConfirmDialog(
+            title = "Restore from Google Drive?",
+            text = "Everything on this phone (payments, categories, budgets and rules) is replaced with the backup in Drive.",
+            confirm = "Restore",
+            onConfirm = vm::restoreFromDrive,
+            onDismiss = { dialog = null },
+        )
+        SettingsDialog.OverwriteDrive -> ConfirmDialog(
+            title = "Replace the Drive backup?",
+            text = "The backup in Drive is replaced with this phone's data. The backup that's there now can't be brought back.",
+            confirm = "Replace",
+            onConfirm = vm::overwriteDrive,
+            onDismiss = { dialog = null },
+        )
+        SettingsDialog.DisconnectDrive -> ConfirmDialog(
+            title = "Disconnect Google Drive?",
+            text = "Daily backup stops and the app gives up access to your Drive. The backup stays in Drive; connect again to use it.",
+            confirm = "Disconnect",
+            onConfirm = vm::disconnectDrive,
             onDismiss = { dialog = null },
         )
         is SettingsDialog.Add -> TextDialog(
@@ -202,6 +278,99 @@ fun SettingsScreen(vm: MainViewModel) {
             onDismiss = { dialog = null },
         )
     }
+}
+
+/** Connect, sync now, daily sync, and the restore-or-replace choice when Drive holds a different backup. */
+@Composable
+private fun DriveCard(
+    s: DriveSync.State,
+    onConnect: () -> Unit,
+    onSync: () -> Unit,
+    onRestore: () -> Unit,
+    onOverwrite: () -> Unit,
+    onAutoSync: (Boolean) -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    AppCard(padding = 20.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconBox(Icons.Rounded.CloudSync)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Google Drive backup", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (s.connected) s.account ?: "Connected" else "Off",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (s.busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        }
+        Spacer(Modifier.height(12.dp))
+        if (!s.connected) {
+            Text(
+                "Copies your payments, categories and budgets to a private folder in your Google Drive, now and every day. " +
+                    "After reinstalling, connect the same Google account to get everything back.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(14.dp))
+            Button(onClick = onConnect, enabled = !s.busy, shape = RoundedCornerShape(14.dp)) { Text("Connect Google Drive") }
+            return@AppCard
+        }
+        val conflict = s.conflict
+        val problem = when {
+            s.needsSignIn -> "Google needs you to allow access to Drive again."
+            conflict != null -> "Drive has a different backup" +
+                (conflict.device?.let { " from $it" } ?: "") +
+                (conflict.savedAt?.let { ", saved ${formatWhen(it)}" } ?: "") +
+                (conflict.payments?.let { ", with ${plural(it, "payment")}" } ?: "") +
+                ". Restore it, or replace it with this phone's data?"
+            else -> s.error
+        }
+        Text(
+            problem ?: s.lastSyncAt?.let { "Last synced ${syncedWhen(it)}" } ?: "Not synced yet",
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (problem != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            when {
+                s.needsSignIn -> Button(onClick = onConnect, enabled = !s.busy, shape = RoundedCornerShape(14.dp)) { Text("Allow access") }
+                conflict != null -> {
+                    Button(onClick = onRestore, enabled = !s.busy, shape = RoundedCornerShape(14.dp)) { Text("Restore it") }
+                    OutlinedButton(onClick = onOverwrite, enabled = !s.busy, shape = RoundedCornerShape(14.dp)) { Text("Replace it") }
+                }
+                else -> {
+                    Button(onClick = onSync, enabled = !s.busy, shape = RoundedCornerShape(14.dp)) { Text("Sync now") }
+                    OutlinedButton(onClick = onRestore, enabled = !s.busy, shape = RoundedCornerShape(14.dp)) { Text("Restore") }
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Sync every day", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            Switch(checked = s.autoSync, onCheckedChange = onAutoSync)
+        }
+        TextButton(onClick = onDisconnect, enabled = !s.busy) {
+            Text("Disconnect", color = MaterialTheme.colorScheme.error)
+        }
+    }
+}
+
+/** "today, 10:42 am" for today, else "3 Oct, 10:42 am". */
+private fun syncedWhen(timestamp: Long): String {
+    val at = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault())
+    return if (at.toLocalDate() == LocalDate.now()) "today, ${formatTime(timestamp)}" else formatWhen(timestamp)
+}
+
+@Composable
+private fun ConfirmDialog(title: String, text: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(text) },
+        confirmButton = { TextButton(onClick = { onConfirm(); onDismiss() }) { Text(confirm) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable
