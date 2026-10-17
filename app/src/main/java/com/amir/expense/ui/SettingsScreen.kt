@@ -92,7 +92,7 @@ fun SettingsScreen(vm: MainViewModel) {
                 Text("Import statement", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "In PhonePe open History → Download Statement, then share the PDF to Expenses. Or pick the file here.",
+                    "In PhonePe open History → Download Statement, then share the PDF to Kharcha. Or pick the file here.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(14.dp))

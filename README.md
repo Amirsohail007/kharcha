@@ -59,6 +59,8 @@ payment but can't tell you "₹4,000 left for food this month". Kharcha answers 
 
 ## Privacy
 
+Full policy: [PRIVACY.md](PRIVACY.md).
+
 - Everything lives in a database on your phone. There is no account and no server of ours, and no analytics.
 - The app uses the internet for one thing only: **Google Drive backup**, which stays off until you connect it in
   Settings. It keeps one file in your Drive's hidden app folder, which only this app can read. Disconnecting stops
@@ -81,7 +83,7 @@ see [docs/google-drive-setup.md](docs/google-drive-setup.md).
 PhonePe has no API for personal transaction history, so the app reads the statement PDF instead.
 
 1. In PhonePe, open **History → Download Statement** and pick a date range.
-2. Share the PDF to **Expenses** (the app's name on your phone), or tap **Import PhonePe statement** in the app.
+2. Share the PDF to **Kharcha**, or tap **Import PhonePe statement** in the app.
 3. Enter the PDF password. PhonePe uses your registered mobile number.
 
 > **Status:** the statement parser is tested against synthetic statements built from public descriptions of

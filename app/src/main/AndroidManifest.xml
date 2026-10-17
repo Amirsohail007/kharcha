@@ -10,7 +10,7 @@
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:label="Expenses"
+        android:label="Kharcha"
         android:theme="@style/Theme.Expenses">
 
         <activity

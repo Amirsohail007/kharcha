@@ -89,7 +89,7 @@ fun InboxScreen(vm: MainViewModel) {
                         EmptyState(
                             Icons.Rounded.TaskAlt,
                             "All caught up",
-                            "In PhonePe open History → Download Statement, then share the PDF to Expenses.",
+                            "In PhonePe open History → Download Statement, then share the PDF to Kharcha.",
                         ) { ImportButton(vm) }
                     }
                 }

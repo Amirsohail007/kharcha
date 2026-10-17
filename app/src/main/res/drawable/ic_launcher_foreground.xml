@@ -1,11 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Material Symbols "currency_rupee" (rounded, weight 600), centred in the adaptive-icon safe zone -->
+<!-- A budget ring around the rupee: the amber arc is the part of the month's budget spent. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
-    android:viewportWidth="960"
-    android:viewportHeight="960">
-    <group android:pivotX="480" android:pivotY="480" android:scaleX="0.5" android:scaleY="0.5">
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M54,27a27,27 0 1,1 0,54a27,27 0 1,1 0,-54"
+        android:strokeColor="#38FFFFFF"
+        android:strokeWidth="4.5" />
+    <path
+        android:pathData="M54,27A27,27 0 1,1 27,54"
+        android:strokeColor="#FFC34D"
+        android:strokeWidth="4.5"
+        android:strokeLineCap="round" />
+    <!-- Material Symbols "currency_rupee" (rounded, weight 600), 960-unit glyph scaled to the ring's centre -->
+    <group android:translateX="34.8" android:translateY="34.4" android:scaleX="0.04" android:scaleY="0.04">
         <group android:translateY="960">
             <path
                 android:fillColor="#FFFFFF"

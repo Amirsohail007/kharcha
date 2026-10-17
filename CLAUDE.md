@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 Kharcha: single-module Android app (Kotlin, Jetpack Compose, Room). Package and applicationId are
-`com.amir.expense` and the launcher label is "Expenses". Never change the applicationId: installed
+`com.amir.expense` and the launcher label is "Kharcha". Never change the applicationId: installed
 copies would stop receiving updates.
 
 ## Commands
