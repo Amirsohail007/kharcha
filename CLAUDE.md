@@ -118,17 +118,24 @@ run `SampleStatementTest` first and adapt `PhonePeParser` to the extracted text.
 
 ## Releasing
 
-1. Bump `versionCode` (must increase) and `versionName` in `app/build.gradle.kts`.
-   Before releasing a schema change, install the previous release, add data, then install the new APK
-   over it and open it.
-2. `./gradlew assembleRelease`. Signing reads `keystore.properties` and `release.jks` at the repo
-   root. Both are gitignored and must be the same key forever, or updates won't install over
-   existing copies. The release key's SHA-1 must also be registered as an Android OAuth client
-   (`docs/google-drive-setup.md`), or Drive sign-in fails; exercise Drive sync on the release APK.
-3. Commit, tag `vX.Y.Z`, and push the branch and the tag.
-4. Create a GitHub release for the tag and attach the APK named exactly `kharcha.apk`. The README
-   links to `releases/latest/download/kharcha.apk`. Put the APK's SHA-256 in the release notes. `gh`
-   is not logged in on this machine, so the release is created on github.com.
+`docs/releasing.md` is the full procedure. In short:
+
+1. Bump `versionCode` (must increase) and `versionName` in `app/build.gradle.kts`, and write the notes in
+   `docs/releases/v<versionName>.md`. Before releasing a schema change, install the previous release, add
+   data, then install the new APK over it and open it.
+2. On `main`, run **Actions → Release** (or push tag `v<versionName>`). `.github/workflows/release.yml`
+   signs with the `RELEASE_*` repository secrets, refuses any APK whose certificate SHA-256 isn't the
+   README's, and creates a **draft** release with `kharcha.apk` and its SHA-256. Test that APK, then
+   publish the draft (that creates the tag).
+3. Without the secrets, build on the Mac instead: `./gradlew assembleRelease` signs with
+   `keystore.properties` and `release.jks` at the repo root. Both are gitignored and must be the same
+   key forever, or updates won't install over existing copies. Then tag, push the tag, and create the
+   release on github.com with the APK named exactly `kharcha.apk` (the README links to
+   `releases/latest/download/kharcha.apk`) and `APK SHA-256: <hash>` in the notes.
+
+The release key's SHA-1 must also be registered as an Android OAuth client
+(`docs/google-drive-setup.md`), or Drive sign-in fails; exercise Drive sync on the release APK.
+`.github/workflows/build.yml` runs unit tests, debug and (unsigned) release builds, and lint on every push.
 
 Commits must use the personal GitHub identity (noreply email), never the work email. The global
 gitconfig's `includeIf` for `~/Documents/amirsohail007/` sets this; check `git config user.email`

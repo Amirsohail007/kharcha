@@ -1,0 +1,51 @@
+# Unit tests, debug build, R8-shrunk release build (unsigned here) and lint, on every push.
+name: Build
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Caches Gradle and validates the wrapper jar. AGP installs the SDK platform it needs.
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest
+
+      - name: Debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Release APK
+        # No keystore here, so the APK is unsigned; this still runs R8 and resource shrinking.
+        run: |
+          ./gradlew assembleRelease
+          ls -l app/build/outputs/apk/release/
+
+      - name: Lint
+        run: ./gradlew lintDebug
+
+      - name: Upload reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: app/build/reports/

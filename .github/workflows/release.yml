@@ -1,0 +1,120 @@
+# Builds the signed APK and creates a DRAFT GitHub release with it. Nothing is public until you
+# publish the draft. Run it from Actions → Release → Run workflow, or by pushing a tag vX.Y.Z.
+# Needs the RELEASE_* secrets; see docs/releasing.md.
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  # Every release must be signed with this certificate, or it won't install over earlier versions.
+  # Same value as the README's "signing certificate's SHA-256", without colons.
+  CERT_SHA256: 0523942507c5a8f46d36b70ad7bd7f3d5c9cb0fdefb56528d79a948b5d9d5c84
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version and release notes
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name=$(sed -n 's/^ *versionName = "\(.*\)"$/\1/p' app/build.gradle.kts)
+          tag="v$name"
+          if [ -z "$name" ]; then
+            echo "::error::Couldn't read versionName from app/build.gradle.kts"; exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "$tag" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match versionName $name in app/build.gradle.kts"; exit 1
+          fi
+          notes="docs/releases/$tag.md"
+          if [ ! -f "$notes" ]; then
+            echo "::error::Write the release notes in $notes first"; exit 1
+          fi
+          # Drafts count too: rerunning would otherwise leave two drafts for one version.
+          if gh release list --limit 100 --json tagName --jq '.[].tagName' | grep -qxF "$tag"; then
+            echo "::error::A release (or draft) for $tag already exists. Delete the draft, or bump versionCode and versionName."; exit 1
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "notes=$notes" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$STORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Add the RELEASE_KEYSTORE_BASE64, RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS and RELEASE_KEY_PASSWORD secrets (docs/releasing.md)"
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > release.jks
+          # Read by app/build.gradle.kts, the same file you keep at the repo root on your Mac.
+          printf 'storeFile=release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
+
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest
+
+      - name: Signed release APK
+        run: ./gradlew assembleRelease
+
+      - name: Check the signing certificate
+        run: |
+          apk=app/build/outputs/apk/release/app-release.apk
+          if [ ! -f "$apk" ]; then
+            echo "::error::No signed APK at $apk"; ls -l app/build/outputs/apk/release/ || true; exit 1
+          fi
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          digests=$("$apksigner" verify --print-certs "$apk" | sed -n 's/.*certificate SHA-256 digest: //p' | sort -u)
+          if [ "$digests" != "$CERT_SHA256" ]; then
+            echo "::error::APK is signed with $digests, expected $CERT_SHA256. Users couldn't install it over earlier versions."
+            exit 1
+          fi
+          cp "$apk" kharcha.apk
+          ls -l kharcha.apk
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: ${{ steps.version.outputs.name }}
+          TAG: ${{ steps.version.outputs.tag }}
+          NOTES: ${{ steps.version.outputs.notes }}
+        run: |
+          sha=$(sha256sum kharcha.apk | cut -d' ' -f1)
+          { cat "$NOTES"; printf '\nAPK SHA-256: %s\n' "$sha"; } > release-notes.md
+          gh release create "$TAG" kharcha.apk --draft --title "Kharcha $NAME" \
+            --notes-file release-notes.md --target "$GITHUB_SHA"
+          {
+            echo "### Draft release $TAG is ready"
+            echo
+            echo "APK SHA-256: \`$sha\`"
+            echo
+            echo "Test kharcha.apk from the draft on a phone, then publish it on the Releases page."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the signing key
+        if: always()
+        run: rm -f release.jks keystore.properties
