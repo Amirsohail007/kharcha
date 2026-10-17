@@ -23,7 +23,7 @@ category, and always know how much you have left.
 
 ## Download
 
-**[⬇ Download kharcha.apk](https://github.com/Amirsohail007/kharcha/releases/latest/download/kharcha.apk)** (about 3.5 MB, Android 8.0 or newer).
+**[⬇ Download kharcha.apk](https://github.com/Amirsohail007/kharcha/releases/latest/download/kharcha.apk)** (about 4 MB, Android 8.0 or newer).
 All versions are on the [Releases page](https://github.com/Amirsohail007/kharcha/releases).
 
 1. Open the downloaded file on your phone.
